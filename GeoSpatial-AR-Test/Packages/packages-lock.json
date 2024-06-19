@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "com.cesium.unity": {
-      "version": "file:C:/Users/tpaul/Downloads/Unity/com.cesium.unity-1.3.0.tgz",
+      "version": "file:C:/Users/tpaul/Downloads/com.cesium.unity-1.10.1.tgz",
       "depth": 0,
       "source": "local-tarball",
       "dependencies": {
@@ -12,7 +12,7 @@
       }
     },
     "com.google.ar.core.arfoundation.extensions": {
-      "version": "file:C:/Users/tpaul/Downloads/Unity/arcore-unity-extensions-1.37.0.tgz",
+      "version": "file:C:/Users/tpaul/Downloads/arcore-unity-extensions-1.43.0.tgz",
       "depth": 0,
       "source": "local-tarball",
       "dependencies": {

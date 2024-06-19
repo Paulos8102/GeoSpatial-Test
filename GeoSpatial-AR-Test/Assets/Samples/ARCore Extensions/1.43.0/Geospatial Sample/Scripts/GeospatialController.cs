@@ -17,6 +17,30 @@
 // </copyright>
 //-----------------------------------------------------------------------
 
+#if UNITY_2022_3_OR_NEWER && !ARCORE_USE_ARF_5
+// For AR Foundation 5.X compatibility, define the ARCORE_USE_ARF_5
+// symbol, see https://docs.unity3d.com/Manual/CustomScriptingSymbols.html
+// You can define ARCORE_USE_ARF_5 for Unity 2021.x or higher but you have
+// to define it after 2022.x
+#warning For AR Foundation 5.X compatibility, define the ARCORE_USE_ARF_5 symbol
+#endif
+
+#if !ENABLE_LEGACY_INPUT_MANAGER
+// Input.location will not work at runtime with out the old input system.
+// Given that sample has not been ported to support new input
+// Check that Project Settings > Player > Other Settings > Active Input Handling
+// is set to Both or Input Manager (Old)
+#error Input.location API requires Active Input Handling to be set to Input Manager (Old) or Both
+#endif
+
+#if !ENABLE_INPUT_SYSTEM && ARCORE_USE_ARF_5
+// The camera's pose driver in ARF5 needs Input System (New) but given we need Input Manager
+// (Old) for Input.location (see above) ARF5 needs both.
+// Check that Project Settings > Player > Other Settings > Active Input Handling
+// is set to Both
+#error The camera's pose driver needs Input System (New) so set Active Input Handling to Both
+#endif
+
 namespace Google.XR.ARCoreExtensions.Samples.Geospatial
 {
     using System;
@@ -24,6 +48,9 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
     using System.Collections.Generic;
     using System.Diagnostics.CodeAnalysis;
     using System.Linq;
+#if ARCORE_USE_ARF_5 // use ARF 5
+    using Unity.XR.CoreUtils;
+#endif
     using UnityEngine;
     using UnityEngine.EventSystems;
     using UnityEngine.UI;
@@ -44,10 +71,17 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
     {
         [Header("AR Components")]
 
+#if ARCORE_USE_ARF_5 // use ARF 5
+        /// <summary>
+        /// The XROrigin used in the sample.
+        /// </summary>
+        public XROrigin Origin;
+#else // use ARF 4
         /// <summary>
         /// The ARSessionOrigin used in the sample.
         /// </summary>
         public ARSessionOrigin SessionOrigin;
+#endif
 
         /// <summary>
         /// The ARSession used in the sample.
@@ -202,13 +236,6 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
         private const string _localizationSuccessMessage = "Localization completed.";
 
         /// <summary>
-        /// Help message shown when resolving takes too long.
-        /// </summary>
-        private const string _resolvingTimeoutMessage =
-            "Still resolving the terrain anchor.\n" +
-            "Please make sure you're in an area that has VPS coverage.";
-
-        /// <summary>
         /// The timeout period waiting for localization to be completed.
         /// </summary>
         private const float _timeoutSeconds = 180;
@@ -258,14 +285,14 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
         private bool _showAnchorSettingsPanel = false;
 
         /// <summary>
-        /// Determines if streetscape geometry is rendered in the scene.
-        /// </summary>
-        private bool _streetscapeGeometryVisibility = false;
-
-        /// <summary>
         /// Represents the current anchor type of the anchor being placed in the scene.
         /// </summary>
         private AnchorType _anchorType = AnchorType.Geospatial;
+
+        /// <summary>
+        /// Determines if streetscape geometry is rendered in the scene.
+        /// </summary>
+        private bool _streetscapeGeometryVisibility = false;
 
         /// <summary>
         /// Determines which building material will be used for the current building mesh.
@@ -282,18 +309,19 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
         /// <summary>
         /// ARStreetscapeGeometries added in the last Unity Update.
         /// </summary>
-        List<ARStreetscapeGeometry> _addedStreetscapeGeometrys = new List<ARStreetscapeGeometry>();
+        List<ARStreetscapeGeometry> _addedStreetscapeGeometries =
+            new List<ARStreetscapeGeometry>();
 
         /// <summary>
         /// ARStreetscapeGeometries updated in the last Unity Update.
         /// </summary>
-        List<ARStreetscapeGeometry> _updatedStreetscapeGeometrys =
+        List<ARStreetscapeGeometry> _updatedStreetscapeGeometries =
             new List<ARStreetscapeGeometry>();
 
         /// <summary>
         /// ARStreetscapeGeometries removed in the last Unity Update.
         /// </summary>
-        List<ARStreetscapeGeometry> _removedStreetscapeGeometrys =
+        List<ARStreetscapeGeometry> _removedStreetscapeGeometries =
             new List<ARStreetscapeGeometry>();
 
         /// <summary>
@@ -436,10 +464,17 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
             // Note, Application.targetFrameRate is ignored when QualitySettings.vSyncCount != 0.
             Application.targetFrameRate = 60;
 
+#if ARCORE_USE_ARF_5 // use ARF 5
+            if (Origin == null)
+            {
+                Debug.LogError("Cannot find XROrigin.");
+            }
+#else // use ARF 4
             if (SessionOrigin == null)
             {
                 Debug.LogError("Cannot find ARSessionOrigin.");
             }
+#endif
 
             if (Session == null)
             {
@@ -506,6 +541,12 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
                     "GeospatialController Inspector to render StreetscapeGeometry.");
                 return;
             }
+
+            // get access to ARstreetscapeGeometries in ARStreetscapeGeometryManager
+            if (StreetscapeGeometryManager)
+            {
+                StreetscapeGeometryManager.StreetscapeGeometriesChanged += GetStreetscapeGeometry;
+            }
         }
 
         /// <summary>
@@ -527,6 +568,12 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
 
             _anchorObjects.Clear();
             SaveGeospatialAnchorHistory();
+
+            if (StreetscapeGeometryManager)
+            {
+                StreetscapeGeometryManager.StreetscapeGeometriesChanged -=
+                    GetStreetscapeGeometry;
+            }
         }
 
         /// <summary>
@@ -660,7 +707,6 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
                 SnackBarText.text = _localizationSuccessMessage;
                 foreach (var go in _anchorObjects)
                 {
-
                     go.SetActive(true);
                 }
 
@@ -670,29 +716,14 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
             {
                 if (_streetscapeGeometryVisibility)
                 {
-                    // get access to ARstreetscapeGeometries in ARStreetscapeGeometryManager
-                    if (StreetscapeGeometryManager)
-                    {
-                        StreetscapeGeometryManager.StreetscapeGeometriesChanged
-                            += (ARStreetscapeGeometrysChangedEventArgs) =>
-                        {
-                            _addedStreetscapeGeometrys =
-                                ARStreetscapeGeometrysChangedEventArgs.Added;
-                            _updatedStreetscapeGeometrys =
-                                ARStreetscapeGeometrysChangedEventArgs.Updated;
-                            _removedStreetscapeGeometrys =
-                                ARStreetscapeGeometrysChangedEventArgs.Removed;
-                        };
-                    }
-
                     foreach (
-                        ARStreetscapeGeometry streetscapegeometry in _addedStreetscapeGeometrys)
+                        ARStreetscapeGeometry streetscapegeometry in _addedStreetscapeGeometries)
                     {
                         InstantiateRenderObject(streetscapegeometry);
                     }
 
                     foreach (
-                        ARStreetscapeGeometry streetscapegeometry in _updatedStreetscapeGeometrys)
+                        ARStreetscapeGeometry streetscapegeometry in _updatedStreetscapeGeometries)
                     {
                         // This second call to instantiate is required if geometry is toggled on
                         // or off after the app has started.
@@ -701,7 +732,7 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
                     }
 
                     foreach (
-                        ARStreetscapeGeometry streetscapegeometry in _removedStreetscapeGeometrys)
+                        ARStreetscapeGeometry streetscapegeometry in _removedStreetscapeGeometries)
                     {
                         DestroyRenderObject(streetscapegeometry);
                     }
@@ -761,6 +792,20 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
         }
 
         /// <summary>
+        /// Connects the <c>ARStreetscapeGeometry</c> to the specified lists for access.
+        /// </summary>
+        /// <param name="eventArgs">The
+        /// <c><see cref="ARStreetscapeGeometriesChangedEventArgs"/></c> containing the
+        /// <c>ARStreetscapeGeometry</c>.
+        /// </param>
+        private void GetStreetscapeGeometry(ARStreetscapeGeometriesChangedEventArgs eventArgs)
+        {
+            _addedStreetscapeGeometries = eventArgs.Added;
+            _updatedStreetscapeGeometries = eventArgs.Updated;
+            _removedStreetscapeGeometries = eventArgs.Removed;
+        }
+
+        /// <summary>
         /// Sets up a render object for this <c>ARStreetscapeGeometry</c>.
         /// </summary>
         /// <param name="streetscapegeometry">The
@@ -811,7 +856,7 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
         }
 
         /// <summary>
-        /// Updates the render object transform based on this streetscapegeometrys pose.
+        /// Updates the render object transform based on this StreetscapeGeometries pose.
         /// It must be called every frame to update the mesh.
         /// </summary>
         /// <param name="streetscapegeometry">The <c><see cref="ARStreetscapeGeometry"/></c>
@@ -872,17 +917,7 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
         private IEnumerator CheckRooftopPromise(ResolveAnchorOnRooftopPromise promise,
             GeospatialAnchorHistory history)
         {
-            var retry = 0;
-            while (promise.State == PromiseState.Pending)
-            {
-                if (retry == 100)
-                {
-                    SnackBarText.text = _resolvingTimeoutMessage;
-                }
-
-                yield return new WaitForSeconds(0.1f);
-                retry = Math.Min(retry + 1, 100);
-            }
+            yield return promise;
 
             var result = promise.Result;
             if (result.RooftopAnchorState == RooftopAnchorState.Success &&
@@ -916,17 +951,7 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
         private IEnumerator CheckTerrainPromise(ResolveAnchorOnTerrainPromise promise,
             GeospatialAnchorHistory history)
         {
-            var retry = 0;
-            while (promise.State == PromiseState.Pending)
-            {
-                if (retry == 100)
-                {
-                    SnackBarText.text = _resolvingTimeoutMessage;
-                }
-
-                yield return new WaitForSeconds(0.1f);
-                retry = Math.Min(retry + 1, 100);
-            }
+            yield return promise;
 
             var result = promise.Result;
             if (result.TerrainAnchorState == TerrainAnchorState.Success &&
@@ -1067,6 +1092,7 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
                 eunRotation =
                     Quaternion.AngleAxis(180f - (float)history.Heading, Vector3.up);
             }
+
             return eunRotation;
         }
 
@@ -1084,8 +1110,8 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
                             0, eunRotation);
 
                     StartCoroutine(CheckRooftopPromise(rooftopPromise, history));
-
                     return null;
+
                 case AnchorType.Terrain:
                     ResolveAnchorOnTerrainPromise terrainPromise =
                         AnchorManager.ResolveAnchorOnTerrainAsync(
@@ -1093,8 +1119,8 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
                             0, eunRotation);
 
                     StartCoroutine(CheckTerrainPromise(terrainPromise, history));
-
                     return null;
+
                 case AnchorType.Geospatial:
                     ARStreetscapeGeometry streetscapegeometry =
                         StreetscapeGeometryManager.GetStreetscapeGeometry(trackableId);
@@ -1157,6 +1183,7 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
                 anchor.gameObject.SetActive(!terrain);
                 anchorGO.transform.parent = anchor.gameObject.transform;
                 _anchorObjects.Add(anchor.gameObject);
+                SnackBarText.text = GetDisplayStringForAnchorPlacedSuccess();
             }
             else
             {
@@ -1237,7 +1264,11 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
         private void SwitchToARView(bool enable)
         {
             _isInARView = enable;
+#if ARCORE_USE_ARF_5 // use ARF 5
+            Origin.gameObject.SetActive(enable);
+#else // use ARF 4
             SessionOrigin.gameObject.SetActive(enable);
+#endif
             Session.gameObject.SetActive(enable);
             ARCoreExtensions.gameObject.SetActive(enable);
             ARViewCanvas.SetActive(enable);
@@ -1389,7 +1420,11 @@ namespace Google.XR.ARCoreExtensions.Samples.Geospatial
                     "Geospatial sample failed to start location service.\n" +
                     "Please restart the app and grant the fine location permission.";
             }
+#if ARCORE_USE_ARF_5 // use ARF 5
+            else if (Origin == null || Session == null || ARCoreExtensions == null)
+#else // use ARF 4
             else if (SessionOrigin == null || Session == null || ARCoreExtensions == null)
+#endif
             {
                 returningReason = string.Format(
                     "Geospatial sample failed due to missing AR Components.");
